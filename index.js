@@ -5,6 +5,7 @@ const cookieParser = require('cookie-parser');
 const path = require('path');
 const port = process.env.PORT || 3000;
 const connection = require('./config/db');
+const cors = require('cors');
 
 // routes
 const authRoutes = require('./routes/authRoutes');
@@ -21,6 +22,10 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
+app.use(cors({
+  origin: "*", // or "https://data-drive-iota.vercel.app"
+  credentials: true
+}));
 
 // rate limiter middleware
 

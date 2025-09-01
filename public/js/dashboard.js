@@ -16,7 +16,7 @@ async function loadDrive(folderId = null, folderName = "Root", pushPath = true) 
   container.innerHTML = "<p>Loading...</p>";
 
   try {
-    const res = await fetch(`https://data-drive-iota.vercel.app/api/folders/${folderId || ''}`);
+    const res = await fetch(`/api/folders/${folderId || ''}`);
     const data = await res.json();
 
     if (!data.folders && !data.files) {
@@ -101,7 +101,7 @@ document.getElementById('folderForm').addEventListener('submit', async (e) => {
   const name = document.getElementById('folderName').value;
 
   try {
-    const res = await fetch('https://data-drive-iota.vercel.app/api/folders/create', {
+    const res = await fetch('/api/folders/create', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, parentFolder: currentFolder })
@@ -127,7 +127,7 @@ document.getElementById('fileForm').addEventListener('submit', async (e) => {
   if (currentFolder) formData.append('parentFolder', currentFolder);
 
   try {
-    const res = await fetch('https://data-drive-iota.vercel.app/api/files/upload', {
+    const res = await fetch('/api/files/upload', {
       method: 'POST',
       body: formData
     });
@@ -147,7 +147,7 @@ async function editFolder(id, oldName) {
   if (!newName) return;
 
   try {
-    const res = await fetch(`https://data-drive-iota.vercel.app/api/folders/${id}`, {
+    const res = await fetch(`/api/folders/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: newName })
@@ -166,7 +166,7 @@ async function deleteFolder(id) {
   if (!confirm("Are you sure you want to delete this folder and its contents?")) return;
 
   try {
-    const res = await fetch(`https://data-drive-iota.vercel.app/api/folders/${id}`, { method: 'DELETE' });
+    const res = await fetch(`/api/folders/${id}`, { method: 'DELETE' });
     const data = await res.json();
     alert(data.message);
     loadDrive(currentFolder, null, false);
@@ -180,7 +180,7 @@ async function deleteFile(id) {
   if (!confirm("Are you sure you want to delete this file?")) return;
 
   try {
-    const res = await fetch(`https://data-drive-iota.vercel.app/api/files/${id}`, { method: 'DELETE' });
+    const res = await fetch(`/api/files/${id}`, { method: 'DELETE' });
     const data = await res.json();
     alert(data.message);
     loadDrive(currentFolder, null, false);
@@ -192,7 +192,7 @@ async function deleteFile(id) {
 // Download file
 async function downloadFile(id) {
   try {
-    const res = await fetch(`https://data-drive-iota.vercel.app/api/files/download/${id}`);
+    const res = await fetch(`/api/files/download/${id}`);
     const data = await res.json();
 
     if (data.url) {
@@ -209,7 +209,7 @@ async function downloadFile(id) {
 
 // Logout
 function logout() {
-  fetch('https://data-drive-iota.vercel.app/api/auth/logout', { method: 'POST' }).then(() => {
+  fetch('/api/auth/logout', { method: 'POST' }).then(() => {
     window.location.href = 'login.html';
   });
 }
