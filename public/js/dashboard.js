@@ -50,8 +50,8 @@ async function loadDrive(folderId = null, folderName = "Root", pushPath = true) 
       container.innerHTML += `
         <div class="item">
           ${f.name}
-          <button onclick="downloadFile('${f._id}')">⬇️ Download</button>
-          <button onclick="deleteFile('${f._id}')">🗑️ Delete</button>
+          <button onclick="downloadFile('${f._id}')">Download</button>
+          <button onclick="deleteFile('${f._id}')">Delete</button>
         </div>
       `;
     });
