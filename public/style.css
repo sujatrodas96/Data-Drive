@@ -85,11 +85,48 @@ h1, h2 {
   transition: 0.2s;
 }
 
-.item button, 
+/* .item button, 
 .item a {
   margin-left: 8px;
   flex-shrink: 0;
+} */
+
+/* Common style for action buttons inside .item */
+/* Reset the global 100% width for item buttons */
+.item button {
+  width: auto;              /* let the button size fit content */
+  min-width: 70px;          /* give a minimum width for balance */
+  padding: 8px 12px;        /* compact padding */
+  font-size: 0.85rem;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background 0.3s, transform 0.2s;
+  margin-left: 5px;         /* spacing between buttons */
 }
+
+/* Edit button */
+.item button:nth-of-type(1) {
+  background: #0d6efd;
+  color: #fff;
+}
+.item button:nth-of-type(1):hover {
+  background: #0b5ed7;
+  transform: translateY(-1px);
+}
+
+/* Delete button */
+.item button:nth-of-type(2) {
+  background: #dc3545;
+  color: #fff;
+}
+.item button:nth-of-type(2):hover {
+  background: #bb2d3b;
+  transform: translateY(-1px);
+}
+
+
 
 /* Responsive Styles */
 @media (max-width: 768px) {
