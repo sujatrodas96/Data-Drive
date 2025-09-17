@@ -91,7 +91,7 @@ h1, h2 {
   flex-shrink: 0;
 }
 
-/* ✅ Responsive Styles */
+/* Responsive Styles */
 @media (max-width: 768px) {
   .container {
     margin-top: 60px;
