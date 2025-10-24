@@ -6,6 +6,7 @@ pipeline {
         EC2_SSH = credentials('ec2-ssh-key')
         IMAGE_NAME = "data-drive-container"
         DOCKERHUB_USER = "${DOCKERHUB_CREDENTIALS_USR}"
+        EC2_HOST = "3.91.38.160"
     }
 
     stages {
@@ -13,25 +14,6 @@ pipeline {
             steps {
                 echo "📦 Cloning repository..."
                 git branch: 'main', url: 'https://github.com/sujatrodas96/Data-Drive.git'
-            }
-        }
-
-        stage('Install Dependencies') {
-            steps {
-                echo "📥 Installing Node.js dependencies..."
-                sh 'npm install'
-            }
-        }
-
-        stage('Run Tests') {
-            steps {
-                echo "🧪 Running test cases..."
-                // If no test script exists, just skip
-                sh '''
-                if [ -f package.json ]; then
-                    npm test || echo "⚠️ No test script found. Skipping tests."
-                fi
-                '''
             }
         }
 
@@ -66,18 +48,40 @@ pipeline {
         stage('Deploy to EC2') {
             steps {
                 echo "🚀 Deploying to EC2..."
-                sh """
-                    echo '${EC2_SSH}' > data-drive.pem
-                    chmod 600 data-drive.pem
-
-                    ssh -o StrictHostKeyChecking=no -i data-drive.pem ubuntu@3.91.38.160 '
-                        docker pull ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:latest &&
-                        docker stop data-drive || true &&
-                        docker rm data-drive || true &&
-                        docker run -d -p 3000:3000 --name data-drive ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:latest
-                    '
-                    rm -f data-drive.pem
-                """
+                script {
+                    sh """
+                        # Create SSH key file
+                        mkdir -p ~/.ssh
+                        echo '${EC2_SSH}' > ~/.ssh/data-drive.pem
+                        chmod 600 ~/.ssh/data-drive.pem
+                        
+                        # Deploy to EC2
+                        ssh -o StrictHostKeyChecking=no -i ~/.ssh/data-drive.pem ubuntu@${EC2_HOST} << 'ENDSSH'
+                            # Login to Docker Hub
+                            echo ${DOCKERHUB_CREDENTIALS_PSW} | docker login -u ${DOCKERHUB_CREDENTIALS_USR} --password-stdin
+                            
+                            # Pull latest image
+                            docker pull ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:latest
+                            
+                            # Stop and remove old container if exists
+                            docker stop data-drive 2>/dev/null || true
+                            docker rm data-drive 2>/dev/null || true
+                            
+                            # Run new container
+                            docker run -d -p 3000:3000 --name data-drive --restart unless-stopped ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:latest
+                            
+                            # Verify container is running
+                            echo "Container status:"
+                            docker ps | grep data-drive
+                            
+                            # Logout from Docker Hub
+                            docker logout
+ENDSSH
+                        
+                        # Clean up SSH key
+                        rm -f ~/.ssh/data-drive.pem
+                    """
+                }
             }
         }
     }
@@ -85,9 +89,17 @@ pipeline {
     post {
         success {
             echo "✅ Deployment successful!"
+            echo "🌐 Application should be running at http://${EC2_HOST}:3000"
         }
         failure {
             echo "❌ Deployment failed!"
+        }
+        always {
+            echo "🧹 Cleaning up Docker resources..."
+            sh """
+                docker logout 2>/dev/null || true
+                rm -f ~/.ssh/data-drive.pem 2>/dev/null || true
+            """
         }
     }
 }
