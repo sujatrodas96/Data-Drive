@@ -3,9 +3,10 @@ pipeline {
 
     environment {
         DOCKERHUB_CREDENTIALS = credentials('dockerhub-cred')
-        EC2_SSH = credentials('ec2-ssh-key')
+        EC2_SSH = credentials('ec2-ssh-key-new')
         IMAGE_NAME = "data-drive-container"
         DOCKERHUB_USER = "${DOCKERHUB_CREDENTIALS_USR}"
+        EC2_HOST = "3.91.38.160"
     }
 
     stages {
@@ -47,28 +48,38 @@ pipeline {
         stage('Deploy to EC2') {
             steps {
                 echo "🚀 Deploying to EC2..."
-                sshagent(['ec2-ssh-key']) {
+                script {
                     sh """
-                        ssh -o StrictHostKeyChecking=no ubuntu@3.91.38.160 '
-                            # Login to Docker Hub on EC2
+                        # Create SSH key file
+                        mkdir -p ~/.ssh
+                        echo '${EC2_SSH}' > ~/.ssh/data-drive.pem
+                        chmod 600 ~/.ssh/data-drive.pem
+                        
+                        # Deploy to EC2
+                        ssh -o StrictHostKeyChecking=no -i ~/.ssh/data-drive.pem ubuntu@${EC2_HOST} << 'ENDSSH'
+                            # Login to Docker Hub
                             echo ${DOCKERHUB_CREDENTIALS_PSW} | docker login -u ${DOCKERHUB_CREDENTIALS_USR} --password-stdin
                             
                             # Pull latest image
                             docker pull ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:latest
                             
-                            # Stop and remove old container
+                            # Stop and remove old container if exists
                             docker stop data-drive 2>/dev/null || true
                             docker rm data-drive 2>/dev/null || true
                             
                             # Run new container
-                            docker run -d -p 3000:3000 --name data-drive ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:latest
+                            docker run -d -p 3000:3000 --name data-drive --restart unless-stopped ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:latest
+                            
+                            # Verify container is running
+                            echo "Container status:"
+                            docker ps | grep data-drive
                             
                             # Logout from Docker Hub
                             docker logout
-                            
-                            # Verify container is running
-                            docker ps | grep data-drive
-                        '
+ENDSSH
+                        
+                        # Clean up SSH key
+                        rm -f ~/.ssh/data-drive.pem
                     """
                 }
             }
@@ -78,14 +89,16 @@ pipeline {
     post {
         success {
             echo "✅ Deployment successful!"
+            echo "🌐 Application should be running at http://${EC2_HOST}:3000"
         }
         failure {
             echo "❌ Deployment failed!"
         }
         always {
-            echo "🧹 Cleaning up Docker resources on Jenkins..."
+            echo "🧹 Cleaning up Docker resources..."
             sh """
-                docker logout || true
+                docker logout 2>/dev/null || true
+                rm -f ~/.ssh/data-drive.pem 2>/dev/null || true
             """
         }
     }
