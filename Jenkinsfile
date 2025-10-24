@@ -45,29 +45,71 @@ pipeline {
             }
         }
 
+        stage('Debug SSH Key') {
+            steps {
+                echo "🔍 Debugging SSH Key format..."
+                withCredentials([string(credentialsId: 'ec2-ssh-key-new', variable: 'SSH_KEY_CONTENT')]) {
+                    sh '''
+                        echo "Creating temporary key file..."
+                        echo "$SSH_KEY_CONTENT" > /tmp/debug-key.pem
+                        
+                        echo "=== Key Statistics ==="
+                        echo "File size: $(wc -c < /tmp/debug-key.pem) bytes"
+                        echo "Line count: $(wc -l < /tmp/debug-key.pem)"
+                        
+                        echo "=== First 2 lines ==="
+                        head -2 /tmp/debug-key.pem
+                        
+                        echo "=== Last 2 lines ==="
+                        tail -2 /tmp/debug-key.pem
+                        
+                        echo "=== Checking for Windows line endings ==="
+                        if file /tmp/debug-key.pem | grep -q CRLF; then
+                            echo "⚠️  WARNING: File has Windows (CRLF) line endings!"
+                        else
+                            echo "✅ File has Unix (LF) line endings"
+                        fi
+                        
+                        chmod 600 /tmp/debug-key.pem
+                        
+                        echo "=== Testing SSH with verbose output ==="
+                        ssh -vvv -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i /tmp/debug-key.pem ubuntu@3.91.38.160 'echo "Connection test"' 2>&1 || true
+                        
+                        rm -f /tmp/debug-key.pem
+                    '''
+                }
+            }
+        }
+
         stage('Deploy to EC2') {
             steps {
                 echo "🚀 Deploying to EC2..."
                 withCredentials([string(credentialsId: 'ec2-ssh-key-new', variable: 'SSH_KEY_CONTENT')]) {
                     sh '''
+                        set -e
+                        
                         # Create .ssh directory
                         mkdir -p ~/.ssh
                         
-                        # Write SSH key to file with proper formatting
-                        echo "$SSH_KEY_CONTENT" > ~/.ssh/data-drive.pem
+                        # Write SSH key - handle potential line ending issues
+                        printf "%s" "$SSH_KEY_CONTENT" > ~/.ssh/data-drive.pem
+                        
+                        # Ensure Unix line endings
+                        dos2unix ~/.ssh/data-drive.pem 2>/dev/null || sed -i 's/\\r$//' ~/.ssh/data-drive.pem 2>/dev/null || true
                         
                         # Fix permissions
                         chmod 600 ~/.ssh/data-drive.pem
                         
-                        # Verify key format
-                        echo "Checking SSH key format..."
-                        head -1 ~/.ssh/data-drive.pem
-                        
-                        # Test SSH connection
                         echo "Testing SSH connection..."
-                        ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i ~/.ssh/data-drive.pem ubuntu@3.91.38.160 'echo "✅ SSH connection successful!"'
+                        if ! ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i ~/.ssh/data-drive.pem ubuntu@3.91.38.160 'echo "✅ SSH connection successful!"'; then
+                            echo "❌ SSH connection failed!"
+                            echo "Checking if EC2 is reachable..."
+                            ping -c 3 3.91.38.160 || echo "EC2 host not reachable"
+                            rm -f ~/.ssh/data-drive.pem
+                            exit 1
+                        fi
                         
-                        # Deploy to EC2
+                        echo "Deploying application..."
                         ssh -o StrictHostKeyChecking=no -i ~/.ssh/data-drive.pem ubuntu@3.91.38.160 bash << 'ENDSSH'
 set -e
 
@@ -120,7 +162,7 @@ ENDSSH
         }
         failure {
             echo "❌ Deployment failed!"
-            echo "💡 Check the logs above for details."
+            echo "💡 Check the debug output above for details."
         }
         always {
             echo "🧹 Cleaning up..."
