@@ -6,6 +6,8 @@ pipeline {
         CONTAINER_NAME = "data-drive-container"
         EC2_HOST = "3.91.38.160"
         EC2_USER = "ubuntu"
+        DOCKER_HUB_USER = "sujatro123"
+        DOCKER_HUB_TOKEN = "dckr_pat_dLVHwuc2RCn5y1BjXAWwsSR0HN8"
     }
 
     stages {
@@ -18,7 +20,7 @@ pipeline {
 
         stage('Install Dependencies & Run Tests') {
             steps {
-                echo "📥 Installing dependencies and running tests inside Node Docker container..."
+                echo "📥 Installing dependencies and running tests inside Node container..."
                 sh '''
                     docker run --rm -v $PWD:/usr/src/app -w /usr/src/app node:20 bash -c "
                         npm install &&
@@ -40,32 +42,33 @@ pipeline {
         stage('Login to Docker Hub') {
             steps {
                 echo '🔑 Logging in to Docker Hub...'
-                withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'DOCKER_HUB_USER', passwordVariable: 'DOCKER_HUB_PASS')]) {
-                    sh 'echo $DOCKER_HUB_PASS | docker login -u $DOCKER_HUB_USER --password-stdin'
-                }
+                sh '''
+                    echo "$DOCKER_HUB_TOKEN" | docker login -u "$DOCKER_HUB_USER" --password-stdin
+                '''
             }
         }
-        
+
         stage('Tag & Push Docker Image') {
             steps {
-                echo "📤 Pushing Docker image to Docker Hub..."
+                echo "📤 Tagging and pushing image to Docker Hub..."
                 sh """
-                    docker tag ${IMAGE_NAME}:latest ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:latest
-                    docker push ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:latest
+                    docker tag ${IMAGE_NAME}:latest ${DOCKER_HUB_USER}/${IMAGE_NAME}:latest
+                    docker push ${DOCKER_HUB_USER}/${IMAGE_NAME}:latest
                 """
             }
         }
 
         stage('Deploy to EC2') {
             steps {
-                echo "🚀 Deploying to EC2..."
+                echo "🚀 Deploying on EC2..."
                 sshagent(['ec2-ssh-key']) {
                     sh """
                         ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} '
-                            docker pull ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:latest &&
+                            docker login -u ${DOCKER_HUB_USER} -p ${DOCKER_HUB_TOKEN} &&
+                            docker pull ${DOCKER_HUB_USER}/${IMAGE_NAME}:latest &&
                             docker stop ${CONTAINER_NAME} || true &&
                             docker rm ${CONTAINER_NAME} || true &&
-                            docker run -d -p 3000:3000 --name ${CONTAINER_NAME} ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:latest
+                            docker run -d -p 3000:3000 --name ${CONTAINER_NAME} ${DOCKER_HUB_USER}/${IMAGE_NAME}:latest
                         '
                     """
                 }
@@ -75,10 +78,10 @@ pipeline {
 
     post {
         success {
-            echo "✅ Deployment successful!"
+            echo "✅ CI/CD Pipeline completed successfully!"
         }
         failure {
-            echo "❌ Deployment failed!"
+            echo "❌ Pipeline failed!"
         }
     }
 }
