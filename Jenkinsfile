@@ -38,17 +38,14 @@ pipeline {
         }
 
         stage('Login to Docker Hub') {
-            environment {
-                DOCKERHUB_CREDENTIALS = credentials('dockerhub-login')
-            }
             steps {
-                echo "🔑 Logging in to Docker Hub..."
-                sh """
-                    echo ${DOCKERHUB_CREDENTIALS_PSW} | docker login -u ${DOCKERHUB_CREDENTIALS_USR} --password-stdin
-                """
+                echo '🔑 Logging in to Docker Hub...'
+                withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'DOCKER_HUB_USER', passwordVariable: 'DOCKER_HUB_PASS')]) {
+                    sh 'echo $DOCKER_HUB_PASS | docker login -u $DOCKER_HUB_USER --password-stdin'
+                }
             }
         }
-
+        
         stage('Tag & Push Docker Image') {
             steps {
                 echo "📤 Pushing Docker image to Docker Hub..."
