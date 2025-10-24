@@ -48,50 +48,56 @@ pipeline {
         stage('Deploy to EC2') {
             steps {
                 echo "🚀 Deploying to EC2..."
-                withCredentials([file(credentialsId: 'ec2-ssh-key-new', variable: 'SSH_KEY_FILE')]) {
-                    sh """
-                        # Create .ssh directory if it doesn't exist
+                withCredentials([string(credentialsId: 'ec2-ssh-key-new', variable: 'SSH_KEY_CONTENT')]) {
+                    sh '''
+                        # Create .ssh directory
                         mkdir -p ~/.ssh
                         
-                        # Copy the SSH key file
-                        cp \${SSH_KEY_FILE} ~/.ssh/data-drive.pem
+                        # Write SSH key to file with proper formatting
+                        echo "$SSH_KEY_CONTENT" > ~/.ssh/data-drive.pem
+                        
+                        # Fix permissions
                         chmod 600 ~/.ssh/data-drive.pem
+                        
+                        # Verify key format
+                        echo "Checking SSH key format..."
+                        head -1 ~/.ssh/data-drive.pem
                         
                         # Test SSH connection
                         echo "Testing SSH connection..."
-                        ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i ~/.ssh/data-drive.pem ${EC2_USER}@${EC2_HOST} 'echo "SSH connection successful!"'
+                        ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i ~/.ssh/data-drive.pem ubuntu@3.91.38.160 'echo "✅ SSH connection successful!"'
                         
-                        # Deploy application
-                        ssh -o StrictHostKeyChecking=no -i ~/.ssh/data-drive.pem ${EC2_USER}@${EC2_HOST} << 'ENDSSH'
+                        # Deploy to EC2
+                        ssh -o StrictHostKeyChecking=no -i ~/.ssh/data-drive.pem ubuntu@3.91.38.160 bash << 'ENDSSH'
 set -e
 
-echo "Logging into Docker Hub..."
-echo "${DOCKERHUB_CREDENTIALS_PSW}" | docker login -u "${DOCKERHUB_CREDENTIALS_USR}" --password-stdin
+echo "🔐 Logging into Docker Hub..."
+echo "''' + env.DOCKERHUB_CREDENTIALS_PSW + '''" | docker login -u "''' + env.DOCKERHUB_CREDENTIALS_USR + '''" --password-stdin
 
-echo "Pulling latest Docker image..."
-docker pull ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:latest
+echo "📥 Pulling latest Docker image..."
+docker pull ''' + env.DOCKERHUB_CREDENTIALS_USR + '''/''' + env.IMAGE_NAME + ''':latest
 
-echo "Stopping old container..."
+echo "🛑 Stopping old container..."
 docker stop data-drive 2>/dev/null || true
 docker rm data-drive 2>/dev/null || true
 
-echo "Starting new container..."
-docker run -d \\
-  -p 3000:3000 \\
-  --name data-drive \\
-  --restart unless-stopped \\
-  ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:latest
+echo "🚀 Starting new container..."
+docker run -d \
+  -p 3000:3000 \
+  --name data-drive \
+  --restart unless-stopped \
+  ''' + env.DOCKERHUB_CREDENTIALS_USR + '''/''' + env.IMAGE_NAME + ''':latest
 
-echo "Waiting for container to start..."
+echo "⏳ Waiting for container to start..."
 sleep 3
 
-echo "Container status:"
+echo "📊 Container status:"
 docker ps --filter name=data-drive
 
-echo "Cleaning up old images..."
+echo "🧹 Cleaning up old images..."
 docker image prune -f
 
-echo "Logging out from Docker Hub..."
+echo "🔓 Logging out from Docker Hub..."
 docker logout
 
 echo "✅ Deployment completed successfully!"
@@ -101,7 +107,7 @@ ENDSSH
                         rm -f ~/.ssh/data-drive.pem
                         
                         echo "🎉 Application deployed successfully!"
-                    """
+                    '''
                 }
             }
         }
@@ -114,7 +120,7 @@ ENDSSH
         }
         failure {
             echo "❌ Deployment failed!"
-            echo "Check the logs above for details."
+            echo "💡 Check the logs above for details."
         }
         always {
             echo "🧹 Cleaning up..."
