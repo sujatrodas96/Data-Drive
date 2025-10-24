@@ -2,21 +2,14 @@ pipeline {
     agent any
 
     environment {
-        // Docker Hub credentials stored in Jenkins (Username + Password)
         DOCKERHUB_CREDENTIALS = credentials('dockerhub-cred')
-        
-        // EC2 SSH key (use your data-drive.pem content stored as Jenkins SSH credential)
         EC2_SSH = credentials('ec2-ssh-key')
-        
-        IMAGE_NAME = "data-drive-new"          // Docker image name
-        CONTAINER_NAME = "data-drive-new"          // Container name on EC2
-        EC2_USER = "ubuntu"                    // EC2 default user for Ubuntu
-        EC2_HOST = "3.91.38.160"              // Your EC2 public IP
+        IMAGE_NAME = "data-drive-new"
+        DOCKERHUB_USER = "${DOCKERHUB_CREDENTIALS_USR}"
     }
 
     stages {
-
-        stage('Checkout Code') {
+        stage('Checkout') {
             steps {
                 echo "📦 Cloning repository..."
                 git branch: 'main', url: 'https://github.com/sujatrodas96/Data-Drive.git'
@@ -45,20 +38,24 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 echo "🐳 Building Docker image..."
-                sh "docker build -t ${IMAGE_NAME}:latest ."
+                sh """
+                    docker build -t ${IMAGE_NAME}:latest .
+                """
             }
         }
 
         stage('Login to Docker Hub') {
             steps {
                 echo "🔑 Logging in to Docker Hub..."
-                sh "echo ${DOCKERHUB_CREDENTIALS_PSW} | docker login -u ${DOCKERHUB_CREDENTIALS_USR} --password-stdin"
+                sh """
+                    echo ${DOCKERHUB_CREDENTIALS_PSW} | docker login -u ${DOCKERHUB_CREDENTIALS_USR} --password-stdin
+                """
             }
         }
 
-        stage('Push Docker Image') {
+        stage('Tag & Push Docker Image') {
             steps {
-                echo "📤 Tagging and pushing Docker image to Docker Hub..."
+                echo "📤 Pushing Docker image to Docker Hub..."
                 sh """
                     docker tag ${IMAGE_NAME}:latest ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:latest
                     docker push ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:latest
@@ -68,34 +65,29 @@ pipeline {
 
         stage('Deploy to EC2') {
             steps {
-                echo "🚀 Deploying Docker container on EC2..."
-                sh '''
-                    # Create temporary PEM file from Jenkins SSH credential
-                    echo "$EC2_SSH" > data-drive.pem
+                echo "🚀 Deploying to EC2..."
+                sh """
+                    echo '${EC2_SSH}' > data-drive.pem
                     chmod 600 data-drive.pem
 
-                    # SSH into EC2 and deploy
-                    ssh -o StrictHostKeyChecking=no -i data-drive.pem ${EC2_USER}@${EC2_HOST} "
-                        docker login -u ${DOCKERHUB_CREDENTIALS_USR} -p ${DOCKERHUB_CREDENTIALS_PSW} &&
+                    ssh -o StrictHostKeyChecking=no -i data-drive.pem ubuntu@<YOUR_EC2_PUBLIC_IP> '
                         docker pull ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:latest &&
-                        docker stop ${CONTAINER_NAME} || true &&
-                        docker rm ${CONTAINER_NAME} || true &&
-                        docker run -d -p 3000:3000 --name ${CONTAINER_NAME} ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:latest
-                    "
-
-                    # Remove temporary PEM file
+                        docker stop data-drive || true &&
+                        docker rm data-drive || true &&
+                        docker run -d -p 3000:3000 --name data-drive ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:latest
+                    '
                     rm -f data-drive.pem
-                '''
+                """
             }
         }
     }
 
     post {
         success {
-            echo "✅ CI/CD Pipeline completed successfully! App deployed to EC2."
+            echo "✅ Deployment successful!"
         }
         failure {
-            echo "❌ Pipeline failed. Check Jenkins logs for errors."
+            echo "❌ Deployment failed!"
         }
     }
 }
