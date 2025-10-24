@@ -6,6 +6,9 @@ pipeline {
         EC2_SSH = credentials('ec2-ssh-key')
         IMAGE_NAME = "data-drive-new"
         DOCKERHUB_USER = "${DOCKERHUB_CREDENTIALS_USR}"
+        CONTAINER_NAME = "data-drive"
+        EC2_USER = "ubuntu"
+        EC2_HOST = "3.91.38.160" // replace with your EC2 public IP
     }
 
     stages {
@@ -16,21 +19,16 @@ pipeline {
             }
         }
 
-        stage('Install Dependencies') {
+        stage('Install Dependencies & Run Tests') {
             steps {
-                echo "📥 Installing Node.js dependencies..."
-                sh 'npm install'
-            }
-        }
-
-        stage('Run Tests') {
-            steps {
-                echo "🧪 Running test cases..."
-                // If no test script exists, just skip
+                echo "📥 Installing dependencies and running tests inside Node Docker container..."
                 sh '''
-                if [ -f package.json ]; then
-                    npm test || echo "⚠️ No test script found. Skipping tests."
-                fi
+                    docker run --rm -v $PWD:/usr/src/app -w /usr/src/app node:18 bash -c "
+                        npm install &&
+                        if [ -f package.json ]; then
+                            npm test || echo '⚠️ No test script found. Skipping tests.'
+                        fi
+                    "
                 '''
             }
         }
@@ -38,18 +36,14 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 echo "🐳 Building Docker image..."
-                sh """
-                    docker build -t ${IMAGE_NAME}:latest .
-                """
+                sh "docker build -t ${IMAGE_NAME}:latest ."
             }
         }
 
         stage('Login to Docker Hub') {
             steps {
                 echo "🔑 Logging in to Docker Hub..."
-                sh """
-                    echo ${DOCKERHUB_CREDENTIALS_PSW} | docker login -u ${DOCKERHUB_CREDENTIALS_USR} --password-stdin
-                """
+                sh "echo ${DOCKERHUB_CREDENTIALS_PSW} | docker login -u ${DOCKERHUB_CREDENTIALS_USR} --password-stdin"
             }
         }
 
@@ -66,18 +60,22 @@ pipeline {
         stage('Deploy to EC2') {
             steps {
                 echo "🚀 Deploying to EC2..."
-                sh """
-                    echo '${EC2_SSH}' > data-drive.pem
+                sh '''
+                    # Create temporary PEM file from Jenkins credential
+                    echo "$EC2_SSH" > data-drive.pem
                     chmod 600 data-drive.pem
 
-                    ssh -o StrictHostKeyChecking=no -i data-drive.pem ubuntu@<YOUR_EC2_PUBLIC_IP> '
+                    # SSH into EC2 and deploy Docker container
+                    ssh -o StrictHostKeyChecking=no -i data-drive.pem ${EC2_USER}@${EC2_HOST} "
                         docker pull ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:latest &&
-                        docker stop data-drive || true &&
-                        docker rm data-drive || true &&
-                        docker run -d -p 3000:3000 --name data-drive ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:latest
-                    '
+                        docker stop ${CONTAINER_NAME} || true &&
+                        docker rm ${CONTAINER_NAME} || true &&
+                        docker run -d -p 3000:3000 --name ${CONTAINER_NAME} ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:latest
+                    "
+
+                    # Remove temporary PEM file
                     rm -f data-drive.pem
-                """
+                '''
             }
         }
     }
