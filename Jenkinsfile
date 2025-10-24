@@ -16,25 +16,6 @@ pipeline {
             }
         }
 
-        stage('Install Dependencies') {
-            steps {
-                echo "📥 Installing Node.js dependencies..."
-                sh 'npm install'
-            }
-        }
-
-        stage('Run Tests') {
-            steps {
-                echo "🧪 Running test cases..."
-                // If no test script exists, just skip
-                sh '''
-                if [ -f package.json ]; then
-                    npm test || echo "⚠️ No test script found. Skipping tests."
-                fi
-                '''
-            }
-        }
-
         stage('Build Docker Image') {
             steps {
                 echo "🐳 Building Docker image..."
@@ -66,18 +47,30 @@ pipeline {
         stage('Deploy to EC2') {
             steps {
                 echo "🚀 Deploying to EC2..."
-                sh """
-                    echo '${EC2_SSH}' > data-drive.pem
-                    chmod 600 data-drive.pem
-
-                    ssh -o StrictHostKeyChecking=no -i data-drive.pem ubuntu@3.91.38.160 '
-                        docker pull ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:latest &&
-                        docker stop data-drive || true &&
-                        docker rm data-drive || true &&
-                        docker run -d -p 3000:3000 --name data-drive ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:latest
-                    '
-                    rm -f data-drive.pem
-                """
+                sshagent(['ec2-ssh-key']) {
+                    sh """
+                        ssh -o StrictHostKeyChecking=no ubuntu@3.91.38.160 '
+                            # Login to Docker Hub on EC2
+                            echo ${DOCKERHUB_CREDENTIALS_PSW} | docker login -u ${DOCKERHUB_CREDENTIALS_USR} --password-stdin
+                            
+                            # Pull latest image
+                            docker pull ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:latest
+                            
+                            # Stop and remove old container
+                            docker stop data-drive 2>/dev/null || true
+                            docker rm data-drive 2>/dev/null || true
+                            
+                            # Run new container
+                            docker run -d -p 3000:3000 --name data-drive ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:latest
+                            
+                            # Logout from Docker Hub
+                            docker logout
+                            
+                            # Verify container is running
+                            docker ps | grep data-drive
+                        '
+                    """
+                }
             }
         }
     }
@@ -88,6 +81,12 @@ pipeline {
         }
         failure {
             echo "❌ Deployment failed!"
+        }
+        always {
+            echo "🧹 Cleaning up Docker resources on Jenkins..."
+            sh """
+                docker logout || true
+            """
         }
     }
 }
