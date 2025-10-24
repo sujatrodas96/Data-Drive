@@ -6,7 +6,7 @@ pipeline {
         EC2_SSH = credentials('ec2-ssh-key')
         IMAGE_NAME = "data-drive-new"
         DOCKERHUB_USER = "${DOCKERHUB_CREDENTIALS_USR}"
-        CONTAINER_NAME = "data-drive"
+        CONTAINER_NAME = "data-drive-new-create"
         EC2_USER = "ubuntu"
         EC2_HOST = "3.91.38.160" // replace with your EC2 public IP
     }
