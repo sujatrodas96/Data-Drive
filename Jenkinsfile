@@ -3,10 +3,10 @@ pipeline {
 
     environment {
         DOCKERHUB_CREDENTIALS = credentials('dockerhub-cred')
-        EC2_SSH = credentials('ec2-ssh-key-new')
         IMAGE_NAME = "data-drive-container"
         DOCKERHUB_USER = "${DOCKERHUB_CREDENTIALS_USR}"
         EC2_HOST = "3.91.38.160"
+        EC2_USER = "ubuntu"
     }
 
     stages {
@@ -48,38 +48,59 @@ pipeline {
         stage('Deploy to EC2') {
             steps {
                 echo "🚀 Deploying to EC2..."
-                script {
+                withCredentials([file(credentialsId: 'ec2-ssh-key-new', variable: 'SSH_KEY_FILE')]) {
                     sh """
-                        # Create SSH key file
+                        # Create .ssh directory if it doesn't exist
                         mkdir -p ~/.ssh
-                        echo '${EC2_SSH}' > ~/.ssh/data-drive.pem
+                        
+                        # Copy the SSH key file
+                        cp \${SSH_KEY_FILE} ~/.ssh/data-drive.pem
                         chmod 600 ~/.ssh/data-drive.pem
                         
-                        # Deploy to EC2
-                        ssh -o StrictHostKeyChecking=no -i ~/.ssh/data-drive.pem ubuntu@${EC2_HOST} << 'ENDSSH'
-                            # Login to Docker Hub
-                            echo ${DOCKERHUB_CREDENTIALS_PSW} | docker login -u ${DOCKERHUB_CREDENTIALS_USR} --password-stdin
-                            
-                            # Pull latest image
-                            docker pull ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:latest
-                            
-                            # Stop and remove old container if exists
-                            docker stop data-drive 2>/dev/null || true
-                            docker rm data-drive 2>/dev/null || true
-                            
-                            # Run new container
-                            docker run -d -p 3000:3000 --name data-drive --restart unless-stopped ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:latest
-                            
-                            # Verify container is running
-                            echo "Container status:"
-                            docker ps | grep data-drive
-                            
-                            # Logout from Docker Hub
-                            docker logout
+                        # Test SSH connection
+                        echo "Testing SSH connection..."
+                        ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i ~/.ssh/data-drive.pem ${EC2_USER}@${EC2_HOST} 'echo "SSH connection successful!"'
+                        
+                        # Deploy application
+                        ssh -o StrictHostKeyChecking=no -i ~/.ssh/data-drive.pem ${EC2_USER}@${EC2_HOST} << 'ENDSSH'
+set -e
+
+echo "Logging into Docker Hub..."
+echo "${DOCKERHUB_CREDENTIALS_PSW}" | docker login -u "${DOCKERHUB_CREDENTIALS_USR}" --password-stdin
+
+echo "Pulling latest Docker image..."
+docker pull ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:latest
+
+echo "Stopping old container..."
+docker stop data-drive 2>/dev/null || true
+docker rm data-drive 2>/dev/null || true
+
+echo "Starting new container..."
+docker run -d \\
+  -p 3000:3000 \\
+  --name data-drive \\
+  --restart unless-stopped \\
+  ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:latest
+
+echo "Waiting for container to start..."
+sleep 3
+
+echo "Container status:"
+docker ps --filter name=data-drive
+
+echo "Cleaning up old images..."
+docker image prune -f
+
+echo "Logging out from Docker Hub..."
+docker logout
+
+echo "✅ Deployment completed successfully!"
 ENDSSH
                         
                         # Clean up SSH key
                         rm -f ~/.ssh/data-drive.pem
+                        
+                        echo "🎉 Application deployed successfully!"
                     """
                 }
             }
@@ -89,13 +110,14 @@ ENDSSH
     post {
         success {
             echo "✅ Deployment successful!"
-            echo "🌐 Application should be running at http://${EC2_HOST}:3000"
+            echo "🌐 Application is running at http://${EC2_HOST}:3000"
         }
         failure {
             echo "❌ Deployment failed!"
+            echo "Check the logs above for details."
         }
         always {
-            echo "🧹 Cleaning up Docker resources..."
+            echo "🧹 Cleaning up..."
             sh """
                 docker logout 2>/dev/null || true
                 rm -f ~/.ssh/data-drive.pem 2>/dev/null || true
