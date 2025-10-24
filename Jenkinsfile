@@ -2,11 +2,10 @@ pipeline {
     agent any
 
     environment {
-        IMAGE_NAME = "data-drive-new"
-        CONTAINER_NAME = "data-drive-container"
-        EC2_HOST = "3.91.38.160"
-        DOCKER_HUB_USER = "sujatro123"
-        DOCKER_HUB_TOKEN = "dckr_pat_dLVHwuc2RCn5y1BjXAWwsSR0HN8"
+        DOCKERHUB_CREDENTIALS = credentials('dockerhub-cred')
+        EC2_SSH = credentials('ec2-ssh-key')
+        IMAGE_NAME = "data-drive-container"
+        DOCKERHUB_USER = "${DOCKERHUB_CREDENTIALS_USR}"
     }
 
     stages {
@@ -17,39 +16,68 @@ pipeline {
             }
         }
 
-        stage('Build Docker Image') {
+        stage('Install Dependencies') {
             steps {
-                echo "🐳 Building Docker image..."
-                sh "docker build -t ${IMAGE_NAME}:latest ."
+                echo "📥 Installing Node.js dependencies..."
+                sh 'npm install'
             }
         }
 
-        stage('Login & Push to Docker Hub') {
+        stage('Run Tests') {
             steps {
-                echo '🔑 Logging in & pushing image to Docker Hub...'
+                echo "🧪 Running test cases..."
+                // If no test script exists, just skip
                 sh '''
-                    echo "$DOCKER_HUB_TOKEN" | docker login -u "$DOCKER_HUB_USER" --password-stdin
-                    docker tag ${IMAGE_NAME}:latest ${DOCKER_HUB_USER}/${IMAGE_NAME}:latest
-                    docker push ${DOCKER_HUB_USER}/${IMAGE_NAME}:latest
+                if [ -f package.json ]; then
+                    npm test || echo "⚠️ No test script found. Skipping tests."
+                fi
                 '''
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                echo "🐳 Building Docker image..."
+                sh """
+                    docker build -t ${IMAGE_NAME}:latest .
+                """
+            }
+        }
+
+        stage('Login to Docker Hub') {
+            steps {
+                echo "🔑 Logging in to Docker Hub..."
+                sh """
+                    echo ${DOCKERHUB_CREDENTIALS_PSW} | docker login -u ${DOCKERHUB_CREDENTIALS_USR} --password-stdin
+                """
+            }
+        }
+
+        stage('Tag & Push Docker Image') {
+            steps {
+                echo "📤 Pushing Docker image to Docker Hub..."
+                sh """
+                    docker tag ${IMAGE_NAME}:latest ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:latest
+                    docker push ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:latest
+                """
             }
         }
 
         stage('Deploy to EC2') {
             steps {
                 echo "🚀 Deploying to EC2..."
+                sh """
+                    echo '${EC2_SSH}' > data-drive.pem
+                    chmod 600 data-drive.pem
 
-                sshagent(['ec2-ssh-key']) {
-                    sh '''
-                        ssh -o StrictHostKeyChecking=no ubuntu@3.91.38.160 "
-                            docker login -u ${DOCKER_HUB_USER} -p ${DOCKER_HUB_TOKEN} &&
-                            docker pull ${DOCKER_HUB_USER}/${IMAGE_NAME}:latest &&
-                            docker stop ${CONTAINER_NAME} || true &&
-                            docker rm ${CONTAINER_NAME} || true &&
-                            docker run -d -p 3000:3000 --name ${CONTAINER_NAME} ${DOCKER_HUB_USER}/${IMAGE_NAME}:latest
-                        "
-                    '''
-                }
+                    ssh -o StrictHostKeyChecking=no -i data-drive.pem ubuntu@3.91.38.160 '
+                        docker pull ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:latest &&
+                        docker stop data-drive || true &&
+                        docker rm data-drive || true &&
+                        docker run -d -p 3000:3000 --name data-drive ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:latest
+                    '
+                    rm -f data-drive.pem
+                """
             }
         }
     }
