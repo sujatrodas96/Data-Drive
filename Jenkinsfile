@@ -60,24 +60,19 @@ pipeline {
         stage('Deploy to EC2') {
             steps {
                 echo "🚀 Deploying to EC2..."
-                sh '''
-                    # Create temporary PEM file from Jenkins credential
-                    echo "$EC2_SSH" > data-drive.pem
-                    chmod 600 data-drive.pem
-
-                    # SSH into EC2 and deploy Docker container
-                    ssh -o StrictHostKeyChecking=no -i data-drive.pem ${EC2_USER}@${EC2_HOST} "
-                        docker pull ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:latest &&
-                        docker stop ${CONTAINER_NAME} || true &&
-                        docker rm ${CONTAINER_NAME} || true &&
-                        docker run -d -p 3000:3000 --name ${CONTAINER_NAME} ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:latest
-                    "
-
-                    # Remove temporary PEM file
-                    rm -f data-drive.pem
-                '''
+                sshagent(['ec2-ssh-key']) {
+                    sh """
+                        ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} '
+                            docker pull ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:latest &&
+                            docker stop ${CONTAINER_NAME} || true &&
+                            docker rm ${CONTAINER_NAME} || true &&
+                            docker run -d -p 3000:3000 --name ${CONTAINER_NAME} ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:latest
+                        '
+                    """
+                }
             }
         }
+
     }
 
     post {
