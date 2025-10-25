@@ -2,10 +2,7 @@ pipeline {
     agent any
 
     environment {
-        DOCKERHUB_CREDENTIALS = credentials('dockerhub-cred')
-        EC2_SSH = credentials('ec2-ssh-key')
         IMAGE_NAME = "data-drive-container"
-        DOCKERHUB_USER = "${DOCKERHUB_CREDENTIALS_USR}"
         EC2_HOST = "3.91.38.160"
     }
 
@@ -20,67 +17,54 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 echo "🐳 Building Docker image..."
-                sh """
+                sh '''
                     docker build -t ${IMAGE_NAME}:latest .
-                """
+                '''
             }
         }
 
-        stage('Login to Docker Hub') {
+        stage('Login to Docker Hub & Push Image') {
             steps {
-                echo "🔑 Logging in to Docker Hub..."
-                sh """
-                    echo ${DOCKERHUB_CREDENTIALS_PSW} | docker login -u ${DOCKERHUB_CREDENTIALS_USR} --password-stdin
-                """
-            }
-        }
-
-        stage('Tag & Push Docker Image') {
-            steps {
-                echo "📤 Pushing Docker image to Docker Hub..."
-                sh """
-                    docker tag ${IMAGE_NAME}:latest ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:latest
-                    docker push ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:latest
-                """
+                echo "🔑 Logging into Docker Hub and pushing image..."
+                withCredentials([usernamePassword(credentialsId: 'dockerhub-cred', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    sh '''
+                        echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                        docker tag ${IMAGE_NAME}:latest "$DOCKER_USER/${IMAGE_NAME}:latest"
+                        docker push "$DOCKER_USER/${IMAGE_NAME}:latest"
+                        docker logout
+                    '''
+                }
             }
         }
 
         stage('Deploy to EC2') {
             steps {
                 echo "🚀 Deploying to EC2..."
-                script {
-                    sh """
-                        # Create SSH key file
-                        mkdir -p ~/.ssh
-                        echo '${EC2_SSH}' > ~/.ssh/data-drive.pem
-                        chmod 600 ~/.ssh/data-drive.pem
-                        
-                        # Deploy to EC2
-                        ssh -o StrictHostKeyChecking=no -i ~/.ssh/data-drive.pem ubuntu@${EC2_HOST} << 'ENDSSH'
-                            # Login to Docker Hub
-                            echo ${DOCKERHUB_CREDENTIALS_PSW} | docker login -u ${DOCKERHUB_CREDENTIALS_USR} --password-stdin
-                            
-                            # Pull latest image
-                            docker pull ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:latest
-                            
-                            # Stop and remove old container if exists
-                            docker stop data-drive 2>/dev/null || true
-                            docker rm data-drive 2>/dev/null || true
-                            
-                            # Run new container
-                            docker run -d -p 3000:3000 --name data-drive --restart unless-stopped ${DOCKERHUB_CREDENTIALS_USR}/${IMAGE_NAME}:latest
-                            
-                            # Verify container is running
-                            echo "Container status:"
-                            docker ps | grep data-drive
-                            
-                            # Logout from Docker Hub
-                            docker logout
-ENDSSH
-                        
-                        # Clean up SSH key
-                        rm -f ~/.ssh/data-drive.pem
-                    """
+                withCredentials([sshUserPrivateKey(credentialsId: 'ec2-ssh-key', keyFileVariable: 'SSH_KEY', usernameVariable: 'SSH_USER')]) {
+                    withCredentials([usernamePassword(credentialsId: 'dockerhub-cred', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                        sh '''
+                            chmod 600 "$SSH_KEY"
+                            ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" "$SSH_USER"@"${EC2_HOST}" << 'ENDSSH'
+                                echo "🔑 Logging in to Docker Hub..."
+                                echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                                
+                                echo "📥 Pulling latest image..."
+                                docker pull "$DOCKER_USER/${IMAGE_NAME}:latest"
+                                
+                                echo "🧹 Cleaning up old container..."
+                                docker stop data-drive 2>/dev/null || true
+                                docker rm data-drive 2>/dev/null || true
+                                
+                                echo "🚀 Starting new container..."
+                                docker run -d -p 3000:3000 --name data-drive --restart unless-stopped "$DOCKER_USER/${IMAGE_NAME}:latest"
+                                
+                                echo "🔍 Checking container status..."
+                                docker ps | grep data-drive || echo "⚠️ Container not found!"
+                                
+                                docker logout
+                            ENDSSH
+                        '''
+                    }
                 }
             }
         }
@@ -96,10 +80,9 @@ ENDSSH
         }
         always {
             echo "🧹 Cleaning up Docker resources..."
-            sh """
+            sh '''
                 docker logout 2>/dev/null || true
-                rm -f ~/.ssh/data-drive.pem 2>/dev/null || true
-            """
+            '''
         }
     }
 }
