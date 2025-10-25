@@ -10,14 +10,14 @@ pipeline {
 
         stage('Checkout') {
             steps {
-                echo "📦 Cloning repository..."
+                echo "Cloning repository..."
                 git branch: 'main', url: 'https://github.com/sujatrodas96/Data-Drive.git'
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                echo "🐳 Building Docker image..."
+                echo "Building Docker image..."
                 sh '''
                     docker build -t ${IMAGE_NAME}:latest .
                 '''
@@ -71,7 +71,7 @@ pipeline {
                                 '$DOCKER_USER/${IMAGE_NAME}:latest'
                             
                             # Verify container is running
-                            docker ps | grep data-drive || echo '⚠️ Container not running'
+                            docker ps | grep data-drive || echo 'Container not running'
                             
                             docker logout
                         "
@@ -84,13 +84,13 @@ pipeline {
 
     post {
         success {
-            echo "✅ Deployment successful! App should be running at http://${EC2_HOST}:3000"
+            echo "Deployment successful! App should be running at http://${EC2_HOST}:3000"
         }
         failure {
-            echo "❌ Deployment failed!"
+            echo "Deployment failed!"
         }
         always {
-            echo "🧹 Cleaning up..."
+            echo "Cleaning up..."
             sh '''
                 docker logout 2>/dev/null || true
             '''
