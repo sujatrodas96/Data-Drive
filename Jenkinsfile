@@ -23,11 +23,10 @@ pipeline {
             }
         }
 
-        stage('Login & Push to Docker Hub') {
+        stage('Login & Push Docker Hub') {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'dockerhub-cred', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
                     sh '''
-                        echo "🔑 Logging in to Docker Hub..."
                         echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
                         docker tag ${IMAGE_NAME}:latest "$DOCKER_USER/${IMAGE_NAME}:latest"
                         docker push "$DOCKER_USER/${IMAGE_NAME}:latest"
@@ -39,31 +38,37 @@ pipeline {
 
         stage('Deploy to EC2') {
             steps {
-                echo "🚀 Deploying to EC2..."
                 withCredentials([
                     sshUserPrivateKey(credentialsId: 'ec2-ssh-key', keyFileVariable: 'SSH_KEY', usernameVariable: 'SSH_USER'),
-                    usernamePassword(credentialsId: 'dockerhub-cred', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')
+                    usernamePassword(credentialsId: 'dockerhub-cred', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS'),
+                    string(credentialsId: 'SUPABASE_URL', variable: 'SUPABASE_URL'),
+                    string(credentialsId: 'SUPABASE_ANON_KEY', variable: 'SUPABASE_ANON_KEY'),
+                    string(credentialsId: 'SUPABASE_BUCKET', variable: 'SUPABASE_BUCKET')
                 ]) {
                     sh '''
                         chmod 600 "$SSH_KEY"
 
                         ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" "$SSH_USER"@"${EC2_HOST}" "
-                            echo '🔑 Logging in to Docker Hub...'
+                            # DockerHub login
                             echo '$DOCKER_PASS' | docker login -u '$DOCKER_USER' --password-stdin
-
-                            echo '📥 Pulling latest image...'
-                            docker pull '$DOCKER_USER/${IMAGE_NAME}:latest'
-
-                            echo '🧹 Cleaning up old container...'
+                            
+                            # Stop & remove old container
                             docker stop data-drive 2>/dev/null || true
                             docker rm data-drive 2>/dev/null || true
-
-                            echo '🚀 Starting new container...'
-                            docker run -d -p 3000:3000 --name data-drive --restart unless-stopped '$DOCKER_USER/${IMAGE_NAME}:latest'
-
-                            echo '🔍 Checking container status...'
-                            docker ps | grep data-drive || echo '⚠️ Container not found!'
-
+                            
+                            # Pull latest image
+                            docker pull '$DOCKER_USER/${IMAGE_NAME}:latest'
+                            
+                            # Run container with Supabase env
+                            docker run -d -p 3000:3000 --name data-drive --restart unless-stopped \
+                                -e SUPABASE_URL='$SUPABASE_URL' \
+                                -e SUPABASE_ANON_KEY='$SUPABASE_ANON_KEY' \
+                                -e SUPABASE_BUCKET='$SUPABASE_BUCKET' \
+                                '$DOCKER_USER/${IMAGE_NAME}:latest'
+                            
+                            # Verify
+                            docker ps | grep data-drive || echo '⚠️ Container not running'
+                            
                             docker logout
                         "
                     '''
@@ -74,17 +79,10 @@ pipeline {
 
     post {
         success {
-            echo "✅ Deployment successful!"
-            echo "🌐 Application should be running at http://${EC2_HOST}:3000"
+            echo "✅ Deployment successful! App should be running at http://${EC2_HOST}:3000"
         }
         failure {
             echo "❌ Deployment failed!"
-        }
-        always {
-            echo "🧹 Cleaning up local Docker resources..."
-            sh '''
-                docker logout 2>/dev/null || true
-            '''
         }
     }
 }
