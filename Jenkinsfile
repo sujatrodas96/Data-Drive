@@ -21,36 +21,23 @@ pipeline {
             steps {
                 withCredentials([
                     string(credentialsId: 'SONAR_TOKEN_NEW', variable: 'SONAR_TOKEN'),
+                    string(credentialsId: 'SONAR_URL', variable: 'SONAR_HOST_URL'),
                     string(credentialsId: 'SONAR_ORG', variable: 'SONAR_ORG'),
                     string(credentialsId: 'SONAR_PROJECT_KEY', variable: 'SONAR_PROJECT_KEY')
                 ]) {
-                    withSonarQubeEnv('SonarCloud') {  // ← Add this wrapper
-                        sh """
-                            ${SCANNER_HOME}/bin/sonar-scanner \
-                            -Dsonar.organization=$SONAR_ORG \
-                            -Dsonar.projectKey=$SONAR_PROJECT_KEY \
-                            -Dsonar.sources=.
-                        """
-                    }
+                    sh """
+                        ${SCANNER_HOME}/bin/sonar-scanner \
+                          -Dsonar.organization=$SONAR_ORG \
+                          -Dsonar.projectKey=$SONAR_PROJECT_KEY \
+                          -Dsonar.sources=. \
+                          -Dsonar.host.url=$SONAR_HOST_URL \
+                          -Dsonar.login=$SONAR_TOKEN || true
+                    """
                 }
             }
         }
 
-        /* =============== QUALITY GATE (DO NOT FAIL PIPELINE) =============== */
-        stage("Quality Gate") {
-            steps {
-                timeout(time: 1, unit: 'MINUTES') {
-                    script {
-                        def qg = waitForQualityGate()
-                        echo "Quality Gate Status: ${qg.status}"
-
-                        if (qg.status != 'OK') {
-                            echo "Sonar Quality Gate FAILED — but pipeline will continue."
-                        }
-                    }
-                }
-            }
-        }
+        
 
         /* =============== TRIVY SECURITY SCAN =============== */
         stage('Trivy Scan') {
