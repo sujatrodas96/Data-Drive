@@ -41,15 +41,10 @@ pipeline {
         }
 
         /* ----------- WAIT FOR SONARCLOUD QUALITY GATE ---------------- */
-        stage('Quality Gate (Ignore)') {
+        stage('Quality Gate Check') {
             steps {
-                script {
-                    catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
-                        timeout(time: 3, unit: 'MINUTES') {
-                            def qg = waitForQualityGate()
-                            echo "Quality Gate Status: ${qg.status}"
-                        }
-                    }
+                timeout(time: 2, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: false 
                 }
             }
         }
