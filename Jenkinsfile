@@ -21,8 +21,8 @@ pipeline {
         stage('SonarCloud Scan') {
             steps {
                 withCredentials([
-                    string(credentialsId: 'SONAR_TOKEN_NEW', variable: 'SONAR_TOKEN'),
-                    string(credentialsId: 'SONAR_URL', variable: 'SONAR_HOST_URL'),
+                    string(credentialsId: 'SONAR_TOKEN_NEW', variable: 'SONAR_TOKEN_NEW'),
+                    string(credentialsId: 'SONAR_URL', variable: 'SONAR_URL'),
                     string(credentialsId: 'SONAR_ORG', variable: 'SONAR_ORG'),
                     string(credentialsId: 'SONAR_PROJECT_KEY', variable: 'SONAR_PROJECT_KEY')
                 ]) {
@@ -33,8 +33,8 @@ pipeline {
                           -Dsonar.organization=$SONAR_ORG \
                           -Dsonar.projectKey=$SONAR_PROJECT_KEY \
                           -Dsonar.sources=. \
-                          -Dsonar.host.url=$SONAR_HOST_URL \
-                          -Dsonar.login=$SONAR_TOKEN
+                          -Dsonar.host.url=$SONAR_URL \
+                          -Dsonar.login=$SONAR_TOKEN_NEW
                     '''
                 }
             }
