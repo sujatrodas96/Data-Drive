@@ -4,19 +4,16 @@ pipeline {
     environment {
         IMAGE_NAME = "data-drive-container"
         EC2_HOST = "98.81.152.233"
-        SCANNER_HOME = tool 'sonar-cube'   // SonarScanner tool
+        SCANNER_HOME = tool 'sonar-cube' 
     }
 
     stages {
-
-        /* =============== CHECKOUT =============== */
         stage('Checkout') {
             steps {
                 git branch: 'main', url: 'https://github.com/sujatrodas96/Data-Drive.git'
             }
         }
 
-        /* =============== SONARCLOUD SCAN =============== */
         stage('SonarCloud Scan') {
             steps {
                 withCredentials([
@@ -37,9 +34,6 @@ pipeline {
             }
         }
 
-        
-
-        /* =============== TRIVY SECURITY SCAN =============== */
         stage('Trivy Scan') {
             steps {
                 sh '''
@@ -49,7 +43,6 @@ pipeline {
             }
         }
 
-        /* =============== SNYK SECURITY SCAN =============== */
         stage('Snyk Security Scan') {
             steps {
                 withCredentials([string(credentialsId: 'SNYK_TOKEN', variable: 'SNYK_TOKEN')]) {
@@ -63,14 +56,12 @@ pipeline {
             }
         }
 
-        /* =============== DOCKER BUILD =============== */
         stage('Build Docker Image') {
             steps {
                 sh "docker build -t ${IMAGE_NAME}:latest ."
             }
         }
 
-        /* =============== DOCKER PUSH =============== */
         stage('DockerHub Login & Push') {
             steps {
                 withCredentials([
@@ -90,7 +81,6 @@ pipeline {
             }
         }
 
-        /* =============== DEPLOY TO EC2 =============== */
         stage('Deploy to EC2') {
             steps {
                 withCredentials([
@@ -137,7 +127,6 @@ pipeline {
         }
     }
 
-    /* =============== POST BUILD =============== */
     post {
         success {
             echo "Deployment Successful → http://${EC2_HOST}:3000"
