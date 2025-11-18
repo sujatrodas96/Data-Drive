@@ -1,1 +1,1 @@
-# This secure pipeline is triggered by a GitHub push, running mandatory security checks with SonarQube, Snyk, and Trivy. If checks pass, the code is containerized, pushed to Docker Hub, and automatically deployed onto an EC2 Instance.
+# Data-Drive = This secure pipeline is triggered by a GitHub push, running mandatory security checks with SonarQube, Snyk, and Trivy. If checks pass, the code is containerized, pushed to Docker Hub, and automatically deployed onto an EC2 Instance.
