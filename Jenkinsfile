@@ -21,18 +21,17 @@ pipeline {
             steps {
                 withCredentials([
                     string(credentialsId: 'SONAR_TOKEN_NEW', variable: 'SONAR_TOKEN'),
-                    string(credentialsId: 'SONAR_URL', variable: 'SONAR_HOST_URL'),
                     string(credentialsId: 'SONAR_ORG', variable: 'SONAR_ORG'),
                     string(credentialsId: 'SONAR_PROJECT_KEY', variable: 'SONAR_PROJECT_KEY')
                 ]) {
-                    sh """
-                        ${SCANNER_HOME}/bin/sonar-scanner \
-                          -Dsonar.organization=$SONAR_ORG \
-                          -Dsonar.projectKey=$SONAR_PROJECT_KEY \
-                          -Dsonar.sources=. \
-                          -Dsonar.host.url=$SONAR_HOST_URL \
-                          -Dsonar.login=$SONAR_TOKEN || true
-                    """
+                    withSonarQubeEnv('SonarCloud') {  // ← Add this wrapper
+                        sh """
+                            ${SCANNER_HOME}/bin/sonar-scanner \
+                            -Dsonar.organization=$SONAR_ORG \
+                            -Dsonar.projectKey=$SONAR_PROJECT_KEY \
+                            -Dsonar.sources=.
+                        """
+                    }
                 }
             }
         }
