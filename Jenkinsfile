@@ -41,13 +41,18 @@ pipeline {
         }
 
         /* ----------- WAIT FOR SONARCLOUD QUALITY GATE ---------------- */
-        stage('Quality Gate Check') {
+        stage('Quality Gate') {
             steps {
-                timeout(time: 2, unit: 'MINUTES') {
-                    waitForQualityGate abortPipeline: false 
+                script {
+                    def qg = waitForQualityGate()
+                    if (qg.status != 'OK') {
+                        currentBuild.result = "UNSTABLE"
+                        echo "Quality Gate failed, but marking as UNSTABLE and continuing..."
+                    }
                 }
             }
         }
+
 
 
 
